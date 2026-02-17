@@ -115,20 +115,36 @@ function Stars() {
 }
 
 // ===================== INTERACTIVE COMPASS =====================
+// Зарчим:
+//   - Гадна дугуй (тикүүд + label-ууд) нь "газрын зураг" буюу хойд нь үргэлж дээр
+//   - Алтан зүү нь хөдөлдөг: targetDeg чиглэлийг заана
+//   - Manual горимд: хэрэглэгч ring-ийг эргүүлэн "би ийш харж байна" гэж тохируулна
+//     → зүү нь тэр харцнаас targetDeg рүү эргэж заана
+//   - Бодит горимд: sensor heading ашиглан автоматаар тооцоолно
+//
+// SVG дотор: 0° = дээш (хойд), цагийн зүүний дагуу нэмэгдэнэ
+// arrowSVG = targetDeg  (манай зүг, хойдоос цагийн зүүгээр)
+// Харвал гарах нь: rotate(arrowSVG) → зүү targetDeg зүгт заана
+// Manual ring rotate = -facingDeg → хэрэглэгч харж буй зүг дээр гарч ирнэ
+
 function InteractiveCompass({ targetDeg }) {
   const [compassHeading, setCompassHeading] = useState(null);
   const [permissionState, setPermissionState] = useState("idle");
-  const [manualAngle, setManualAngle] = useState(0);
+  const [facingDeg, setFacingDeg] = useState(0); // manual: хэрэглэгч харж буй зүг
   const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ angle: 0, facing: 0 });
   const svgRef = useRef(null);
   const listenerRef = useRef(null);
 
+  // Sensor
   function handleOrientation(e) {
     let heading = null;
     if (e.webkitCompassHeading != null) {
-      heading = e.webkitCompassHeading;
+      heading = e.webkitCompassHeading; // iOS: хойдоос цагийн зүүгээр
+    } else if (e.absolute && e.alpha != null) {
+      heading = (360 - e.alpha) % 360;
     } else if (e.alpha != null) {
-      heading = (360 - e.alpha + 360) % 360;
+      heading = (360 - e.alpha) % 360;
     }
     if (heading !== null) setCompassHeading(Math.round(heading));
   }
@@ -145,7 +161,10 @@ function InteractiveCompass({ targetDeg }) {
     }
     if (typeof DeviceOrientationEvent.requestPermission === "function") {
       DeviceOrientationEvent.requestPermission()
-        .then(s => { if (s==="granted") { setPermissionState("granted"); startListening(); } else setPermissionState("denied"); })
+        .then(s => {
+          if (s === "granted") { setPermissionState("granted"); startListening(); }
+          else setPermissionState("denied");
+        })
         .catch(() => setPermissionState("denied"));
     } else {
       setPermissionState("granted");
@@ -160,50 +179,67 @@ function InteractiveCompass({ targetDeg }) {
     }
   }, []);
 
-  function getAngleFromEvent(e) {
+  // SVG-ийн төвөөс хулганы байрлалын өнцгийг тооцоолно (degrees, 0=дээш)
+  function svgAngle(e) {
     const svg = svgRef.current;
     if (!svg) return 0;
     const rect = svg.getBoundingClientRect();
-    const cx = rect.left + rect.width/2, cy = rect.top + rect.height/2;
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    // atan2: 0=баруун, +90=доош → +90 нэмж 0=дээш болгоно
     return (Math.atan2(clientY - cy, clientX - cx) * 180 / Math.PI + 90 + 360) % 360;
   }
 
   function onPointerDown(e) {
     if (compassHeading !== null) return;
     e.preventDefault();
+    const angle = svgAngle(e);
     setIsDragging(true);
-    setManualAngle(getAngleFromEvent(e));
+    setDragStart({ angle, facing: facingDeg });
   }
   function onPointerMove(e) {
     if (!isDragging) return;
     e.preventDefault();
-    setManualAngle(getAngleFromEvent(e));
+    const angle = svgAngle(e);
+    const delta = angle - dragStart.angle;
+    setFacingDeg((dragStart.facing + delta + 360) % 360);
   }
   function onPointerUp() { setIsDragging(false); }
 
-  // Arrow angle in SVG: points toward targetDeg relative to current facing direction
-  const facingDeg = compassHeading !== null ? compassHeading : manualAngle;
-  const arrowAngle = targetDeg - facingDeg;
+  // Одоогийн харж буй чиглэл
+  const currentFacing = compassHeading !== null ? compassHeading : facingDeg;
 
-  const size = 180, cx = 90, cy = 90, r = 82;
+  // Алтан зүүний SVG эргэлт:
+  // Хойд = 0°, Зүүн = 90°, Урд = 180°, Баруун = 270°
+  // Зүү targetDeg чиглэлийг заана, гэхдээ хэрэглэгч currentFacing зүг харж байна
+  // → зүү SVG дотор targetDeg - currentFacing өнцөгт байна
+  const arrowRotation = targetDeg - currentFacing;
+
+  // Ring rotation: хэрэглэгч эргүүлэх үед ring эсрэгээр эргэнэ
+  // (Manual горимд л ring эргэдэг, sensor горимд ring хөдлөхгүй — зүү л хөдөлнө)
+  const ringRotation = compassHeading !== null ? -compassHeading : -facingDeg;
+
+  const SIZE = 180, CX = 90, CY = 90, R = 82;
 
   const cardinals = [
-    { label:"Хойд", deg:0, major:true },
-    { label:"ЗХ",   deg:45, major:false },
-    { label:"Зүүн", deg:90, major:true },
+    { label:"Хойд", deg:0,   major:true },
+    { label:"ЗХ",   deg:45,  major:false },
+    { label:"Зүүн", deg:90,  major:true },
     { label:"ЗУ",   deg:135, major:false },
     { label:"Урд",  deg:180, major:true },
     { label:"БУ",   deg:225, major:false },
-    { label:"Баруун", deg:270, major:true },
+    { label:"Баруун",deg:270, major:true },
     { label:"БХ",   deg:315, major:false },
   ];
 
-  function lpos(deg, rad) {
+  function lpos(deg, radius) {
     const a = (deg - 90) * Math.PI / 180;
-    return { x: cx + rad * Math.cos(a), y: cy + rad * Math.sin(a) };
+    return { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a) };
   }
+
+  const dirLabel = Object.entries(directionDeg).find(([,v]) => v === targetDeg)?.[0] || "";
 
   return (
     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
@@ -213,74 +249,79 @@ function InteractiveCompass({ targetDeg }) {
 
       <svg
         ref={svgRef}
-        viewBox={`0 0 ${size} ${size}`}
-        width={size} height={size}
-        style={{cursor: compassHeading!==null ? "default" : (isDragging?"grabbing":"grab"), touchAction:"none", userSelect:"none"}}
-        onMouseDown={onPointerDown} onMouseMove={onPointerMove} onMouseUp={onPointerUp} onMouseLeave={onPointerUp}
+        viewBox={`0 0 ${SIZE} ${SIZE}`}
+        width={SIZE} height={SIZE}
+        style={{
+          cursor: compassHeading!==null ? "default" : (isDragging?"grabbing":"grab"),
+          touchAction:"none", userSelect:"none",
+        }}
+        onMouseDown={onPointerDown} onMouseMove={onPointerMove}
+        onMouseUp={onPointerUp} onMouseLeave={onPointerUp}
         onTouchStart={onPointerDown} onTouchMove={onPointerMove} onTouchEnd={onPointerUp}
       >
-        {/* Background */}
-        <circle cx={cx} cy={cy} r={r} fill="rgba(0,0,0,0.55)" stroke="rgba(255,210,80,0.2)" strokeWidth="1.5"/>
+        {/* Base background */}
+        <circle cx={CX} cy={CY} r={R} fill="rgba(0,0,0,0.55)" stroke="rgba(255,210,80,0.15)" strokeWidth="1"/>
 
-        {/* Tick marks */}
-        {Array.from({length:72},(_,i)=>i*5).map(deg=>{
-          const rad = (deg-90)*Math.PI/180;
-          const major = deg%45===0, mid = deg%15===0;
-          const inner = r-(major?14:mid?8:4);
-          return <line key={deg}
-            x1={cx+(inner)*Math.cos(rad)} y1={cy+(inner)*Math.sin(rad)}
-            x2={cx+(r-2)*Math.cos(rad)} y2={cy+(r-2)*Math.sin(rad)}
-            stroke={major?"rgba(255,210,80,0.8)":mid?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.12)"}
-            strokeWidth={major?1.5:0.8}
-          />;
-        })}
+        {/* ROTATING RING: тикүүд + label-ууд хамт эргэнэ */}
+        <g transform={`rotate(${ringRotation}, ${CX}, ${CY})`}>
+          {/* Tick marks */}
+          {Array.from({length:72},(_,i)=>i*5).map(deg => {
+            const rad = (deg - 90) * Math.PI / 180;
+            const major = deg % 45 === 0, mid = deg % 15 === 0;
+            const inner = R - (major ? 14 : mid ? 8 : 4);
+            return <line key={deg}
+              x1={CX + inner * Math.cos(rad)} y1={CY + inner * Math.sin(rad)}
+              x2={CX + (R-2) * Math.cos(rad)} y2={CY + (R-2) * Math.sin(rad)}
+              stroke={major?"rgba(255,210,80,0.85)":mid?"rgba(255,255,255,0.3)":"rgba(255,255,255,0.12)"}
+              strokeWidth={major?1.5:0.8}
+            />;
+          })}
+          {/* Cardinal labels */}
+          {cardinals.map(({label,deg,major}) => {
+            const pos = lpos(deg, R - 20);
+            return <text key={deg} x={pos.x} y={pos.y}
+              textAnchor="middle" dominantBaseline="central"
+              fill={major?"rgba(255,210,80,0.95)":"rgba(255,255,255,0.4)"}
+              fontSize={major?9:7} fontFamily="'Segoe UI',sans-serif" fontWeight={major?"700":"400"}
+            >{label}</text>;
+          })}
+          {/* Хойд тэмдэглэгээ — улаан тэмдэг */}
+          <circle cx={CX} cy={CY - R + 5} r={3} fill="#ef4444" opacity="0.9"/>
+        </g>
 
-        {/* Cardinal labels */}
-        {cardinals.map(({label,deg,major})=>{
-          const pos = lpos(deg, r-20);
-          return <text key={deg} x={pos.x} y={pos.y}
-            textAnchor="middle" dominantBaseline="central"
-            fill={major?"rgba(255,210,80,0.95)":"rgba(255,255,255,0.4)"}
-            fontSize={major?9:7} fontFamily="'Segoe UI',sans-serif" fontWeight={major?"700":"400"}
-          >{label}</text>;
-        })}
+        {/* Inner circle — хөдөлдөггүй */}
+        <circle cx={CX} cy={CY} r={R-30} fill="rgba(0,0,0,0.75)" stroke="rgba(255,210,80,0.1)" strokeWidth="1"/>
 
-        {/* Inner circle */}
-        <circle cx={cx} cy={cy} r={r-32} fill="rgba(0,0,0,0.7)" stroke="rgba(255,210,80,0.12)" strokeWidth="1"/>
-
-        {/* Rotating arrow group */}
-        <g transform={`rotate(${arrowAngle}, ${cx}, ${cy})`}>
-          {/* North (target direction) — gold */}
+        {/* FIXED ARROW — targetDeg зүгт заана */}
+        <g transform={`rotate(${arrowRotation}, ${CX}, ${CY})`}>
+          {/* Алтан зүү — аз тустай зүг */}
           <polygon
-            points={`${cx},${cy-(r-40)} ${cx+8},${cy+2} ${cx},${cy-8} ${cx-8},${cy+2}`}
+            points={`${CX},${CY-(R-36)} ${CX+7},${CY+4} ${CX},${CY-10} ${CX-7},${CY+4}`}
             fill="#FCD34D"
-            style={{filter:"drop-shadow(0 0 5px rgba(252,211,77,0.7))"}}
+            style={{filter:"drop-shadow(0 0 6px rgba(252,211,77,0.8))"}}
           />
-          {/* South — dim white */}
+          {/* Эсрэг тал — цагаан */}
           <polygon
-            points={`${cx},${cy+(r-40)} ${cx+8},${cy-2} ${cx},${cy+8} ${cx-8},${cy-2}`}
-            fill="rgba(255,255,255,0.18)"
+            points={`${CX},${CY+(R-36)} ${CX+7},${CY-4} ${CX},${CY+10} ${CX-7},${CY-4}`}
+            fill="rgba(255,255,255,0.2)"
           />
         </g>
 
-        {/* Center */}
-        <circle cx={cx} cy={cy} r={5} fill="#FCD34D" stroke="#0a0f1a" strokeWidth="1.5"/>
-        <circle cx={cx} cy={cy} r={2} fill="#0a0f1a"/>
-
-        {/* Drag hint */}
-        {compassHeading===null && isDragging && (
-          <circle cx={cx} cy={cy} r={r-1} fill="none" stroke="rgba(255,210,80,0.2)" strokeWidth="6" strokeDasharray="3 3"/>
-        )}
+        {/* Center dot */}
+        <circle cx={CX} cy={CY} r={5} fill="#FCD34D" stroke="#0a0f1a" strokeWidth="2"/>
+        <circle cx={CX} cy={CY} r={2} fill="#0a0f1a"/>
       </svg>
 
-      {/* Info row */}
+      {/* Info */}
       <div style={{textAlign:"center"}}>
         <div style={{color:"#FCD34D",fontWeight:700,fontSize:13,textShadow:"0 0 8px rgba(252,211,77,0.4)"}}>
-          {targetDeg}° — {Object.entries(directionDeg).find(([,v])=>v===targetDeg)?.[0]||""}
+          {dirLabel} — {targetDeg}°
         </div>
-        {compassHeading!==null
+        {compassHeading !== null
           ? <div style={{color:"rgba(255,255,255,0.4)",fontSize:11,marginTop:2}}>Таны чиглэл: {compassHeading}°</div>
-          : <div style={{color:"rgba(255,255,255,0.3)",fontSize:10,marginTop:2}}>Алтан зүү → аз тустай зүг</div>
+          : <div style={{color:"rgba(255,255,255,0.3)",fontSize:10,marginTop:2}}>
+              Эргүүлж тохируулаарай → алтан зүү аз тустай зүгийг заана
+            </div>
         }
       </div>
 

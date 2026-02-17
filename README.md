@@ -33,4 +33,3 @@ npm run build
 - React 18
 - Vite 5
 - Tailwind CSS 3
-# mur-gargah

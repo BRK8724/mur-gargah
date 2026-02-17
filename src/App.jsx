@@ -208,18 +208,8 @@ function InteractiveCompass({ targetDeg }) {
   }
   function onPointerUp() { setIsDragging(false); }
 
-  // Одоогийн харж буй чиглэл
+  // Одоогийн харж буй чиглэл (бодит sensor эсвэл manual drag)
   const currentFacing = compassHeading !== null ? compassHeading : facingDeg;
-
-  // Алтан зүүний SVG эргэлт:
-  // Хойд = 0°, Зүүн = 90°, Урд = 180°, Баруун = 270°
-  // Зүү targetDeg чиглэлийг заана, гэхдээ хэрэглэгч currentFacing зүг харж байна
-  // → зүү SVG дотор targetDeg - currentFacing өнцөгт байна
-  const arrowRotation = targetDeg - currentFacing;
-
-  // Ring rotation: хэрэглэгч эргүүлэх үед ring эсрэгээр эргэнэ
-  // (Manual горимд л ring эргэдэг, sensor горимд ring хөдлөхгүй — зүү л хөдөлнө)
-  const ringRotation = compassHeading !== null ? -compassHeading : -facingDeg;
 
   const SIZE = 180, CX = 90, CY = 90, R = 82;
 
@@ -262,8 +252,11 @@ function InteractiveCompass({ targetDeg }) {
         {/* Base background */}
         <circle cx={CX} cy={CY} r={R} fill="rgba(0,0,0,0.55)" stroke="rgba(255,210,80,0.15)" strokeWidth="1"/>
 
-        {/* ROTATING RING: тикүүд + label-ууд хамт эргэнэ */}
-        <g transform={`rotate(${ringRotation}, ${CX}, ${CY})`}>
+        {/* ROTATING RING: targetDeg чиглэл дээш ирэхээр эргэнэ */}
+        {/* ringRotation = -(targetDeg - currentFacing) гэвэл:
+            бодит горимд: ring = -(targetDeg - heading) → heading=0 үед targetDeg дээш
+            manual горимд: хэрэглэгч facingDeg өөрчлөхөд ring хамт эргэнэ            */}
+        <g transform={`rotate(${-(targetDeg - currentFacing)}, ${CX}, ${CY})`}>
           {/* Tick marks */}
           {Array.from({length:72},(_,i)=>i*5).map(deg => {
             const rad = (deg - 90) * Math.PI / 180;
@@ -285,27 +278,21 @@ function InteractiveCompass({ targetDeg }) {
               fontSize={major?9:7} fontFamily="'Segoe UI',sans-serif" fontWeight={major?"700":"400"}
             >{label}</text>;
           })}
-          {/* Хойд тэмдэглэгээ — улаан тэмдэг */}
-          <circle cx={CX} cy={CY - R + 5} r={3} fill="#ef4444" opacity="0.9"/>
         </g>
 
         {/* Inner circle — хөдөлдөггүй */}
         <circle cx={CX} cy={CY} r={R-30} fill="rgba(0,0,0,0.75)" stroke="rgba(255,210,80,0.1)" strokeWidth="1"/>
 
-        {/* FIXED ARROW — targetDeg зүгт заана */}
-        <g transform={`rotate(${arrowRotation}, ${CX}, ${CY})`}>
-          {/* Алтан зүү — аз тустай зүг */}
-          <polygon
-            points={`${CX},${CY-(R-36)} ${CX+7},${CY+4} ${CX},${CY-10} ${CX-7},${CY+4}`}
-            fill="#FCD34D"
-            style={{filter:"drop-shadow(0 0 6px rgba(252,211,77,0.8))"}}
-          />
-          {/* Эсрэг тал — цагаан */}
-          <polygon
-            points={`${CX},${CY+(R-36)} ${CX+7},${CY-4} ${CX},${CY+10} ${CX-7},${CY-4}`}
-            fill="rgba(255,255,255,0.2)"
-          />
-        </g>
+        {/* FIXED ARROW — үргэлж дээш (12 цаг) заасан хэвээр */}
+        <polygon
+          points={`${CX},${CY-(R-36)} ${CX+7},${CY+4} ${CX},${CY-10} ${CX-7},${CY+4}`}
+          fill="#FCD34D"
+          style={{filter:"drop-shadow(0 0 6px rgba(252,211,77,0.8))"}}
+        />
+        <polygon
+          points={`${CX},${CY+(R-36)} ${CX+7},${CY-4} ${CX},${CY+10} ${CX-7},${CY-4}`}
+          fill="rgba(255,255,255,0.2)"
+        />
 
         {/* Center dot */}
         <circle cx={CX} cy={CY} r={5} fill="#FCD34D" stroke="#0a0f1a" strokeWidth="2"/>
@@ -676,6 +663,27 @@ export default function App() {
 
         <div style={{textAlign:"center",marginTop:48,color:"rgba(255,255,255,0.15)",fontSize:11,letterSpacing:1}}>
           🌕 Та бүхэн сар шинэдээ сайхан шинэлээрэй 🌕
+        </div>
+
+        {/* Instagram credit */}
+        <div style={{textAlign:"center",marginTop:14,display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="igGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#f09433"/>
+                <stop offset="25%" stopColor="#e6683c"/>
+                <stop offset="50%" stopColor="#dc2743"/>
+                <stop offset="75%" stopColor="#cc2366"/>
+                <stop offset="100%" stopColor="#bc1888"/>
+              </linearGradient>
+            </defs>
+            <rect x="2" y="2" width="20" height="20" rx="6" ry="6" stroke="url(#igGrad)" strokeWidth="2" fill="none"/>
+            <circle cx="12" cy="12" r="4.5" stroke="url(#igGrad)" strokeWidth="2" fill="none"/>
+            <circle cx="17.5" cy="6.5" r="1.3" fill="url(#igGrad)"/>
+          </svg>
+          <span style={{color:"rgba(255,255,255,0.6)",fontSize:16,fontWeight:700,letterSpacing:2}}>
+            bilguunize
+          </span>
         </div>
       </div>
     </div>
